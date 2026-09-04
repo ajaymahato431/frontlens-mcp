@@ -32,17 +32,19 @@ export function describeError(error, hint) {
     if (!hint) {
       switch (error.status) {
         case 403:
-          hint = "Rate-limited or forbidden. Set GITHUB_TOKEN in your environment to raise the anonymous rate limit.";
+          hint =
+            "Rate-limited or forbidden. When the upstream is GitHub, setting GITHUB_TOKEN raises the anonymous rate limit.";
           break;
         case 404:
-          hint = "The requested documentation page was not found. Check the path with search_frontend_docs.";
+          hint = "The requested documentation page was not found. Re-check the path with this server's search tool.";
           break;
         case 408:
         case 504:
           hint = "Request timed out. Try increasing --timeout (default 15000ms).";
           break;
         case 429:
-          hint = "Rate-limited by upstream. Wait a moment and retry, or set GITHUB_TOKEN.";
+          hint =
+            "Rate-limited by upstream. Wait a moment and retry; a GITHUB_TOKEN helps when the upstream is GitHub.";
           break;
       }
     }

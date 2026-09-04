@@ -8,7 +8,8 @@
 # fine on the Windows machine that published it.
 * text=auto eol=lf
 
-# Binary fixtures
+# Binary fixtures must never be line-ending normalised; objects-sample.inv is a
+# real zlib-compressed Sphinx inventory and any rewriting corrupts it.
 *.inv binary
 *.png binary
 *.jpg binary

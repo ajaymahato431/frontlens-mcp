@@ -289,7 +289,7 @@ export function detectProject(directory = process.cwd()) {
       'Tailwind CSS v4 detected: Configuration is CSS-first using `@import "tailwindcss";` and `@theme` directives. ' +
         "No tailwind.config.js is required unless migrating."
     );
-    // Item 8: Alert if legacy config still exists alongside v4
+    // A v4 project that still ships a JS config is the most common half-migrated state.
     if (configs.tailwind) {
       advisories.push(
         `Tailwind v4 project still has \`${configs.tailwind}\`. Consider removing it and using \`@theme\` in CSS instead. ` +
@@ -365,7 +365,7 @@ export function formatProjectReport(result) {
     lines.push("- No known frontend packages detected in package.json.");
   }
 
-  // Item 11: Display detected config files
+  // Config files tell an agent which build system it is actually editing.
   const configEntries = Object.entries(result.configs).filter(([, v]) => v);
   if (configEntries.length > 0) {
     lines.push("", "## Configuration Files");

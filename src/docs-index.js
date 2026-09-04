@@ -1,15 +1,26 @@
 /**
  * Documentation index and resolver for frontlens-mcp.
  *
- * Hybrid storage: bundles structured core documentation pages for offline
- * availability and instant response, with upstream URL fallbacks for
- * live documentation reading.
+ * Two layers, deliberately:
+ *
+ * - The **live index** comes from `src/frameworks/`, which reads the official
+ *   navigation of react.dev, nextjs.org, vite.dev, tailwindcss.com and the
+ *   TypeScript handbook — around a thousand pages, fetched on demand and cached.
+ *
+ * - The **bundled pages** below are a small curated set covering what agents ask
+ *   most (React 19 removals, Tailwind v4 setup, Next.js async APIs). They answer
+ *   instantly, they survive an upstream outage, and they are the reason this
+ *   server still works with no network at all.
+ *
+ * Bundled pages keep their own paths, so they supplement the live index rather
+ * than shadowing it.
  */
 
 import { extractSection, renderOutline, estimateTokens } from "./core/markdown.js";
 import { searchEntries } from "./core/search.js";
+import { cleanPageFor, loadIndex } from "./frameworks/index.js";
 
-export const DOCS_ENTRIES = [
+export const BUNDLED_ENTRIES = [
   // ─── React ─────────────────────────────────────────────────────────────────
   {
     path: "react/upgrade-react-19",
@@ -19,7 +30,7 @@ export const DOCS_ENTRIES = [
     summary:
       "Official guide to upgrading to React 19: removals of ReactDOM.render, hydrate, and forwardRef, " +
       "introduction of Actions, useActionState, and ref as prop.",
-    remoteUrl: "https://raw.githubusercontent.com/facebook/react.dev/main/src/content/blog/2024/04/25/react-19-upgrade-guide.md",
+    remoteUrl: "https://raw.githubusercontent.com/reactjs/react.dev/main/src/content/blog/2024/04/25/react-19-upgrade-guide.md",
     bundledContent: `# React 19 Upgrade Guide
 
 React 19 introduces Actions, Server Functions, asset loading, and document metadata support.
@@ -56,7 +67,7 @@ React 19 is built to work with the React Compiler, which automatically memoizes 
     title: "useActionState Hook Reference",
     category: "Hooks",
     summary: "Complete reference for React 19 useActionState hook, action functions, and pending states.",
-    remoteUrl: "https://raw.githubusercontent.com/facebook/react.dev/main/src/content/reference/react/useActionState.md",
+    remoteUrl: "https://raw.githubusercontent.com/reactjs/react.dev/main/src/content/reference/react/useActionState.md",
     bundledContent: `# useActionState Reference
 
 \`useActionState\` is a React hook that updates state based on the result of a form action.
@@ -143,7 +154,6 @@ export default async function ServerPage() {
     title: "Tailwind CSS v4 with Vite Setup",
     category: "Installation",
     summary: "Setting up Tailwind CSS v4 in a Vite project using @tailwindcss/vite.",
-    remoteUrl: "https://raw.githubusercontent.com/tailwindlabs/tailwindcss.com/master/src/docs/installation/framework-guides/vite.md",
     bundledContent: `# Installing Tailwind CSS v4 with Vite
 
 Tailwind CSS v4 features a dedicated Vite plugin for fast build times and zero configuration overhead.
@@ -690,74 +700,193 @@ Add paths for automatic class detection:
   },
 ];
 
-/**
- * Searches the documentation catalogue.
- */
-export function searchFrontendDocs(query, { framework, limit = 5 } = {}) {
-  const fwFilter = framework && framework !== "all" ? String(framework).toLowerCase().trim() : null;
-
-  const candidateEntries = fwFilter
-    ? DOCS_ENTRIES.filter((e) => e.framework === fwFilter)
-    : DOCS_ENTRIES;
-
-  const results = searchEntries(candidateEntries, query, { limit });
-  return results;
+/** Bundled pages carry their content inline, so they need no network to read. */
+function withBundledFlag(entry) {
+  return { ...entry, bundled: true, sources: entry.remoteUrl ? [entry.remoteUrl] : [] };
 }
 
 /**
- * Resolves a doc entry by path or fuzzy slug.
+ * Builds the full catalogue: every live page plus the bundled set.
+ *
+ * `degraded` names any framework served from the vendored snapshot, so callers
+ * can say the index is stale instead of pretending it is current.
  */
-export function resolveDocEntry(requestedPath) {
+export async function loadDocsIndex({ http, ttl } = {}) {
+  const { entries, degraded } = await loadIndex({ http, ttl });
+
+  const bundled = BUNDLED_ENTRIES.map(withBundledFlag);
+  const seen = new Set(bundled.map((entry) => entry.path));
+
+  const merged = [...bundled];
+  for (const entry of entries) {
+    if (seen.has(entry.path)) continue;
+    seen.add(entry.path);
+    merged.push(entry);
+  }
+
+  return { entries: merged, degraded };
+}
+
+/** `{ framework, count }` rows, in the order the framework registry defines. */
+export function groupByFramework(entries) {
+  const counts = new Map();
+  for (const entry of entries) {
+    counts.set(entry.framework, (counts.get(entry.framework) ?? 0) + 1);
+  }
+  return [...counts.entries()].map(([framework, count]) => ({ framework, count }));
+}
+
+/** `{ category, count }` rows within one framework. */
+export function groupByCategory(entries) {
+  const counts = new Map();
+  for (const entry of entries) {
+    const category = entry.category || "Uncategorized";
+    counts.set(category, (counts.get(category) ?? 0) + 1);
+  }
+  return [...counts.entries()]
+    .map(([category, count]) => ({ category, count }))
+    .sort((a, b) => b.count - a.count || a.category.localeCompare(b.category));
+}
+
+/** Searches the catalogue, optionally narrowed to one framework. */
+export function searchFrontendDocs(entries, query, { framework, limit = 5 } = {}) {
+  const filter = framework && framework !== "all" ? String(framework).toLowerCase().trim() : null;
+  const candidates = filter ? entries.filter((e) => e.framework === filter) : entries;
+  return searchEntries(candidates, query, { limit });
+}
+
+/**
+ * Resolves a caller-supplied path to an index entry.
+ *
+ * Deliberately ordered from certain to speculative: an exact path, then the same
+ * path under a framework prefix, then a unique suffix match. A loose substring
+ * match is only consulted when it identifies exactly one page — matching "react"
+ * against a hundred React pages and silently picking the first is worse than
+ * saying the path was ambiguous.
+ */
+export function resolveDocEntry(entries, requestedPath) {
   const clean = String(requestedPath || "")
     .trim()
     .replace(/^\/+/, "")
-    .replace(/\.md$/, "");
+    .replace(/\/+$/, "")
+    .replace(/\.mdx?$/, "")
+    .toLowerCase();
 
-  const exact = DOCS_ENTRIES.find((e) => e.path === clean);
+  if (!clean) return null;
+
+  const exact = entries.find((e) => e.path.toLowerCase() === clean);
   if (exact) return exact;
 
-  return DOCS_ENTRIES.find((e) => e.path.endsWith(`/${clean}`) || e.path.includes(clean)) || null;
+  const suffix = entries.filter((e) => e.path.toLowerCase().endsWith(`/${clean}`));
+  if (suffix.length === 1) return suffix[0];
+  // Several pages share the trailing segment; prefer the shortest path, which is
+  // the least nested and so the most likely to be the one meant.
+  if (suffix.length > 1) {
+    return [...suffix].sort((a, b) => a.path.length - b.path.length)[0];
+  }
+
+  const contains = entries.filter((e) => e.path.toLowerCase().includes(clean));
+  if (contains.length === 1) return contains[0];
+
+  return null;
+}
+
+/** Suggestions for a path that did not resolve. */
+export function suggestPaths(entries, requestedPath, limit = 8) {
+  return searchEntries(entries, String(requestedPath || "").replace(/[/-]+/g, " "), { limit });
 }
 
 /**
- * Reads doc content, optionally fetching upstream or falling back to bundled content.
+ * Fetches a page's markdown, trying each source in turn.
+ *
+ * react.dev alone needs two candidates per page — section landing pages live at
+ * `<path>/index.md` while ordinary pages live at `<path>.md`, and the navigation
+ * does not say which is which.
  */
-export async function readDocContent(entry, { section, outline, http } = {}) {
-  let content = entry.bundledContent;
+async function fetchPage(entry, { http, ttl }) {
+  const errors = [];
 
-  // If http client is provided and entry has remoteUrl, try remote with fallback to bundled
-  if (http && entry.remoteUrl) {
+  for (const url of entry.sources ?? []) {
     try {
-      const fetched = await http.fetchText(entry.remoteUrl, { ttl: 3 * 60 * 60 * 1000 });
-      if (fetched && fetched.trim().length > 100) {
-        content = fetched;
+      const text = await http.fetchText(url, { ttl });
+      if (text && text.trim().length > 0) {
+        return { text: cleanPageFor(entry.framework, text), url };
       }
-    } catch {
-      // Fallback to bundled content
+    } catch (error) {
+      errors.push(error);
     }
   }
 
+  // A 404 on every candidate is the meaningful signal; surface the last error so
+  // describeError can turn a status into an actionable hint.
+  if (errors.length > 0) throw errors[errors.length - 1];
+  return null;
+}
+
+/**
+ * Reads a documentation page, live where possible and bundled otherwise.
+ *
+ * A bundled page whose upstream is unreachable still answers — that is the point
+ * of bundling it — but the reader says which copy it served so the caller is
+ * never misled about freshness.
+ */
+export async function readDocContent(entry, { section, outline, http, ttl } = {}) {
+  let content = null;
+  let sourceUrl = null;
+  let fetchError = null;
+
+  if (http && (entry.sources?.length ?? 0) > 0) {
+    try {
+      const fetched = await fetchPage(entry, { http, ttl });
+      if (fetched) {
+        content = fetched.text;
+        sourceUrl = fetched.url;
+      }
+    } catch (error) {
+      fetchError = error;
+    }
+  }
+
+  if (!content && entry.bundledContent) {
+    content = entry.bundledContent;
+  }
+
+  if (!content) {
+    // Nothing bundled to fall back to, so the fetch failure is the answer.
+    throw fetchError ?? new Error(`No content available for ${entry.path}.`);
+  }
+
+  const servedFrom = sourceUrl
+    ? `Source: ${sourceUrl}`
+    : fetchError
+      ? `Source: bundled copy (upstream unavailable: ${fetchError.message})`
+      : "Source: bundled copy";
+
   const tokens = estimateTokens(content);
+  const header = `${entry.title} (${entry.framework})\n${servedFrom}`;
 
   if (outline) {
     return {
       title: entry.title,
       path: entry.path,
-      output: `# Outline — ${entry.title} (${entry.path})\nFull page: ~${tokens} tokens\n\n${renderOutline(content)}`,
+      output: `# Outline — ${header}\nFull page: ~${tokens} tokens\n\n${renderOutline(content)}`,
     };
   }
 
   if (section) {
     const extracted = extractSection(content, section);
     if (extracted) {
-      const sectionTokens = estimateTokens(extracted);
       return {
         title: entry.title,
         path: entry.path,
-        output: `# ${entry.title} > Section: ${section}\n~${sectionTokens} tokens\n\n${extracted}`,
+        output:
+          `# ${entry.title} > ${section}\n${servedFrom}\n` +
+          `~${estimateTokens(extracted)} tokens\n\n${extracted}`,
       };
     }
 
+    // Returning the whole page would be the opposite of what was asked; the
+    // outline lets the caller retry precisely and cheaply.
     return {
       title: entry.title,
       path: entry.path,
@@ -771,6 +900,6 @@ export async function readDocContent(entry, { section, outline, http } = {}) {
   return {
     title: entry.title,
     path: entry.path,
-    output: `${content}\n\n---\n~${tokens} tokens`,
+    output: `# ${header}\n\n${content}\n\n---\n~${tokens} tokens`,
   };
 }

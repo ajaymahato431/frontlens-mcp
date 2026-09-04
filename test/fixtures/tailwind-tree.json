@@ -1,0 +1,13 @@
+{
+  "sha": "fixture",
+  "truncated": false,
+  "tree": [
+    { "path": "README.md", "type": "blob" },
+    { "path": "src/docs", "type": "tree" },
+    { "path": "src/docs/dark-mode.mdx", "type": "blob" },
+    { "path": "src/docs/accent-color.mdx", "type": "blob" },
+    { "path": "src/docs/upgrade-guide.mdx", "type": "blob" },
+    { "path": "src/docs/img/clouds.svg", "type": "blob" },
+    { "path": "src/docs/img/guides/angular.react.svg", "type": "blob" }
+  ]
+}

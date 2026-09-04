@@ -1,6 +1,6 @@
 {
   "name": "frontlens-mcp",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "Model Context Protocol server providing version-aware frontend engineering intelligence (React, Next.js, Vite, Tailwind CSS, TypeScript) to AI coding agents",
   "type": "module",
   "main": "index.js",
@@ -20,7 +20,7 @@
   },
   "scripts": {
     "start": "node index.js",
-    "test": "node --test test/core.test.mjs test/env-example.test.mjs test/frontlens.test.mjs",
+    "test": "node --test test/core.test.mjs test/env-example.test.mjs test/frameworks.test.mjs test/frontlens.test.mjs",
     "prepublishOnly": "npm test",
     "test:integration": "node --test --test-timeout=90000 test/integration.test.mjs",
     "test:all": "npm test && npm run test:integration"

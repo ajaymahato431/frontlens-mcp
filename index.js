@@ -18,11 +18,15 @@ import { detectProject, formatProjectReport } from "./src/detector.js";
 import { queryApi, formatApiReport } from "./src/api-registry.js";
 import { resolveMigration, formatMigrationReport } from "./src/migrations.js";
 import { filterBestPractices, renderBestPractices, ALL_TOPICS } from "./src/best-practices.js";
+import { FRAMEWORKS } from "./src/frameworks/index.js";
 import {
-  DOCS_ENTRIES,
+  loadDocsIndex,
   searchFrontendDocs,
   resolveDocEntry,
   readDocContent,
+  groupByFramework,
+  groupByCategory,
+  suggestPaths,
 } from "./src/docs-index.js";
 
 const { config } = bootstrap({
@@ -48,10 +52,33 @@ const http = createHttpClient({
   headers: config.githubToken ? { authorization: `Bearer ${config.githubToken}` } : {},
 });
 
+/**
+ * Loads the merged documentation catalogue.
+ *
+ * The five upstream indexes are fetched in parallel and cached for `index-ttl`,
+ * so this is one burst of requests every few hours rather than per tool call.
+ * A framework that cannot be reached falls back to its bundled snapshot instead
+ * of failing the call, and says so through `degraded`.
+ */
+async function loadCatalogue() {
+  return loadDocsIndex({ http, ttl: config.indexTtlMs });
+}
+
+/** A one-line warning when part of the catalogue is being served from a snapshot. */
+function stalenessNote(degraded) {
+  if (!degraded?.length) return "";
+  const names = degraded.map((d) => `${d.framework} (${d.reason})`).join("; ");
+  return `
+
+> [!NOTE]
+> Served from the bundled snapshot for: ${names}`;
+}
+
 const server = new McpServer({ name: NAME, version: VERSION }, { capabilities: { tools: {} } });
 
-const READ_ONLY = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
+const READ_ONLY = { readOnlyHint: true, destructiveHint: false, openWorldHint: true };
 const NETWORK_HINT = "Check network connectivity to github.com / official doc sites, then try again.";
+const FRAMEWORK_FILTER = ["all", ...FRAMEWORKS];
 
 // ─── 1. frontend_context ─────────────────────────────────────────────────────
 
@@ -78,99 +105,184 @@ server.registerTool(
   })
 );
 
-// ─── 2. search_frontend_docs ─────────────────────────────────────────────────
+// ─── 2. list_frontend_docs ───────────────────────────────────────────────────
+
+server.registerTool(
+  "list_frontend_docs",
+  {
+    title: "Browse the frontend documentation index",
+    description:
+      "Browses the documentation index across React, Next.js, Vite, Tailwind CSS and TypeScript. " +
+      "Called with no arguments it returns a per-framework summary (~60 tokens) — start here. " +
+      "Pass `framework` to list its categories, and `category` to list that category's pages.",
+    inputSchema: {
+      framework: z
+        .enum(FRAMEWORKS)
+        .optional()
+        .describe("Framework to drill into. Omit for the cross-framework summary."),
+      category: z
+        .string()
+        .optional()
+        .describe('Category within a framework, e.g. "Hooks", "App Router", "Utilities".'),
+      limit: z.number().int().positive().max(500).optional().describe("Maximum pages to return."),
+      offset: z.number().int().min(0).optional().describe("Pages to skip, for paging."),
+    },
+    annotations: READ_ONLY,
+  },
+  safeHandler(async ({ framework, category, limit, offset = 0 }) => {
+    const { entries, degraded } = await loadCatalogue();
+    const note = stalenessNote(degraded);
+
+    if (!framework) {
+      const rows = groupByFramework(entries)
+        .map((g) => `  ${g.framework} — ${g.count} pages`)
+        .join("\n");
+      return textResult(
+        `# FrontLens documentation index\n` +
+          `${entries.length} pages across ${FRAMEWORKS.length} frameworks.\n\n${rows}\n\n` +
+          `Next: call again with a framework, or use search_frontend_docs to find a page.${note}`
+      );
+    }
+
+    const inFramework = entries.filter((e) => e.framework === framework);
+
+    if (!category) {
+      const rows = groupByCategory(inFramework)
+        .map((g) => `  ${g.category} — ${g.count} pages`)
+        .join("\n");
+      return textResult(
+        `# ${framework} — ${inFramework.length} pages\n\n${rows}\n\n` +
+          `Next: call again with a category to list its pages.${note}`
+      );
+    }
+
+    const wanted = String(category).toLowerCase();
+    const selected = inFramework.filter((e) => (e.category || "").toLowerCase() === wanted);
+
+    if (selected.length === 0) {
+      const available = groupByCategory(inFramework)
+        .map((g) => g.category)
+        .join(", ");
+      return errorResult(
+        `No category "${category}" in ${framework}.\nAvailable categories: ${available}`
+      );
+    }
+
+    const page = selected.slice(offset, offset + (limit ?? selected.length));
+    const more =
+      offset + page.length < selected.length
+        ? `\n\nMore available: call again with offset ${offset + page.length}.`
+        : "";
+
+    return textResult(
+      `# ${framework} — ${category}\n` +
+        `Showing ${page.length} of ${selected.length}\n\n` +
+        `${page.map((e) => `${e.path} — ${e.title}`).join("\n")}${more}${note}`
+    );
+  }, NETWORK_HINT)
+);
+// ─── 3. search_frontend_docs ─────────────────────────────────────────────────
 
 server.registerTool(
   "search_frontend_docs",
   {
     title: "Search frontend documentation across modern frameworks",
     description:
-      "Searches official documentation across React, Next.js, Vite, Tailwind CSS, and TypeScript. " +
-      "Returns ranked documentation pages with categories, paths, and token-efficient summaries.",
+      "Searches the official documentation of React, Next.js, Vite, Tailwind CSS and TypeScript. " +
+      "Returns ranked pages with their framework, category and path. Use it to answer " +
+      '"where is X documented?", then read the page with read_frontend_docs.',
     inputSchema: {
-      query: z.string().min(1).describe("Search keywords, e.g. 'useActionState', 'tailwind v4 vite', 'cookies async'."),
+      query: z.string().min(1).describe("Search keywords, e.g. 'useActionState', 'dark mode', 'tsconfig bundler'."),
       framework: z
-        .enum(["all", "react", "nextjs", "vite", "tailwind", "typescript"])
+        .enum(FRAMEWORK_FILTER)
         .optional()
         .describe("Filter search to a specific framework. Defaults to 'all'."),
       maxResults: z.number().int().positive().max(20).optional().describe("Maximum results to return. Default 5."),
       includeContent: z
         .boolean()
         .optional()
-        .describe("If true, returns the full documentation content of the top result. Default false."),
+        .describe("If true, also returns the full content of the top result. Default false."),
     },
     annotations: READ_ONLY,
   },
   safeHandler(async ({ query, framework = "all", maxResults, includeContent = false }) => {
+    const { entries, degraded } = await loadCatalogue();
     const limit = maxResults ?? config.maxResults;
-    const results = searchFrontendDocs(query, { framework, limit });
+    const results = searchFrontendDocs(entries, query, { framework, limit });
+    const note = stalenessNote(degraded);
 
     if (results.length === 0) {
       return textResult(
         `# FrontLens Search: "${query}"\n\n` +
-          `No documentation pages found for "${query}" (framework: ${framework}).\n\n` +
-          `Tip: Try searching for a broader term or omission of framework filter.\n` +
-          `Available frameworks: react, nextjs, vite, tailwind, typescript.`
+          `Nothing matched "${query}"${framework === "all" ? "" : ` in ${framework}`}.\n\n` +
+          `Try a broader term or drop the framework filter. ` +
+          `Browse what exists with list_frontend_docs.${note}`
       );
     }
 
-    if (includeContent && results.length > 0) {
+    if (includeContent) {
       const top = results[0];
-      const doc = await readDocContent(top, { http });
+      const doc = await readDocContent(top, { http, ttl: config.docTtlMs });
       return textResult(
-        `# Top Match: ${top.title} (${top.framework})\n` +
-          `Path: \`${top.path}\`\n\n` +
-          `${doc.output}`
+        `# Top match for "${query}": ${top.title} (${top.framework})\n` +
+          `Path: \`${top.path}\`\n\n${doc.output}${note}`
       );
     }
 
     const items = results.map(
       (r) =>
         `- **[${r.framework.toUpperCase()}] ${r.title}**\n` +
-        `  Path: \`${r.path}\` (Category: ${r.category})\n` +
-        `  ${r.summary}`
+        `  Path: \`${r.path}\` (Category: ${r.category})` +
+        (r.summary ? `\n  ${r.summary}` : "")
     );
 
     return textResult(
       `# FrontLens Documentation Search: "${query}"\n` +
         `Found ${results.length} relevant page(s):\n\n` +
         `${items.join("\n\n")}\n\n` +
-        `Next: Use read_frontend_docs with a path to read the complete page or a specific section.`
+        `Next: read one with read_frontend_docs, passing \`section\` or \`outline\` to save tokens.${note}`
     );
-  })
+  }, NETWORK_HINT)
 );
 
-// ─── 3. read_frontend_docs ───────────────────────────────────────────────────
+// ─── 4. read_frontend_docs ───────────────────────────────────────────────────
 
 server.registerTool(
   "read_frontend_docs",
   {
     title: "Read a frontend documentation page or section",
     description:
-      "Reads an authoritative documentation page. Pass `section` to extract only a single heading " +
-      "to save tokens, or `outline` to view the page's headings. Paths can be discovered via search_frontend_docs.",
+      "Reads one documentation page from its official source. Pass `section` to extract a single " +
+      "heading, or `outline` to see the headings first — both cut the token cost sharply. " +
+      "Discover paths with search_frontend_docs or list_frontend_docs.",
     inputSchema: {
-      path: z.string().min(1).describe("Documentation path, e.g. 'react/upgrade-react-19', 'tailwind/installation-vite'."),
-      section: z.string().optional().describe("Heading to extract (e.g. 'Removed Legacy APIs'). Substantially reduces tokens."),
+      path: z
+        .string()
+        .min(1)
+        .describe("Documentation path, e.g. 'react/reference/react/useActionState', 'tailwind/dark-mode'."),
+      section: z.string().optional().describe("Heading to extract (e.g. 'Parameters'). Substantially reduces tokens."),
       outline: z.boolean().optional().describe("If true, returns only the headings outline to help pick a section."),
     },
     annotations: READ_ONLY,
   },
   safeHandler(async ({ path, section, outline }) => {
-    const entry = resolveDocEntry(path);
+    const { entries } = await loadCatalogue();
+    const entry = resolveDocEntry(entries, path);
+
     if (!entry) {
-      const available = DOCS_ENTRIES.map((e) => `  ${e.path} — ${e.title}`).join("\n");
-      return errorResult(
-        `No such documentation page: "${path}".\n\nAvailable documentation paths:\n${available}`
-      );
+      const near = suggestPaths(entries, path);
+      const suggestion = near.length
+        ? `\n\nDid you mean:\n${near.map((e) => `  ${e.path} — ${e.title}`).join("\n")}`
+        : "\n\nUse search_frontend_docs or list_frontend_docs to find a valid path.";
+      return errorResult(`No such documentation page: "${path}".${suggestion}`);
     }
 
-    const read = await readDocContent(entry, { section, outline, http });
+    const read = await readDocContent(entry, { section, outline, http, ttl: config.docTtlMs });
     return textResult(read.output);
   }, NETWORK_HINT)
 );
 
-// ─── 4. check_api ────────────────────────────────────────────────────────────
+// ─── 5. check_api ────────────────────────────────────────────────────────────
 
 server.registerTool(
   "check_api",
@@ -185,7 +297,13 @@ server.registerTool(
         .string()
         .optional()
         .describe("Package name filter, e.g. 'react', 'react-dom', 'next', 'tailwindcss', 'vite', 'typescript'."),
-      version: z.string().optional().describe("Target package version, e.g. '19.0.0', '15.0.0', '4.0.0'."),
+      version: z
+        .string()
+        .optional()
+        .describe(
+          "Target package version, e.g. '19.0.0', '15.0.0', '4.0.0'. Reports the symbol's status " +
+            "as of that version — 'render' is deprecated in React 18 but removed in 19."
+        ),
     },
     annotations: READ_ONLY,
   },
@@ -195,7 +313,7 @@ server.registerTool(
   })
 );
 
-// ─── 5. migration_guide ──────────────────────────────────────────────────────
+// ─── 6. migration_guide ──────────────────────────────────────────────────────
 
 server.registerTool(
   "migration_guide",
@@ -219,7 +337,7 @@ server.registerTool(
   })
 );
 
-// ─── 6. frontend_best_practices ──────────────────────────────────────────────
+// ─── 7. frontend_best_practices ──────────────────────────────────────────────
 
 server.registerTool(
   "frontend_best_practices",

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url><loc>https://nextjs.org/</loc></url>
+  <url><loc>https://nextjs.org/blog/next-15</loc></url>
+  <url><loc>https://nextjs.org/docs/app/getting-started/installation</loc></url>
+  <url><loc>https://nextjs.org/docs/app/api-reference/functions/cookies</loc></url>
+  <url><loc>https://nextjs.org/docs/pages/building-your-application/routing</loc></url>
+  <url><loc>https://nextjs.org/docs/messages/no-img-element</loc></url>
+</urlset>

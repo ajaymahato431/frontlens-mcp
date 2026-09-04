@@ -10,11 +10,17 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { detectProject, formatProjectReport } from "../src/detector.js";
-import { queryApi, formatApiReport, API_ENTRIES } from "../src/api-registry.js";
+import {
+  queryApi,
+  formatApiReport,
+  API_ENTRIES,
+  statusAsOf,
+  compareVersions,
+} from "../src/api-registry.js";
 import { resolveMigration, formatMigrationReport, MIGRATIONS } from "../src/migrations.js";
 import { filterBestPractices, renderBestPractices, ALL_TOPICS } from "../src/best-practices.js";
 import {
-  DOCS_ENTRIES,
+  BUNDLED_ENTRIES,
   searchFrontendDocs,
   resolveDocEntry,
   readDocContent,
@@ -180,31 +186,32 @@ test("filterBestPractices retrieves topics by framework and topic keyword", () =
 // ─── docs-index ──────────────────────────────────────────────────────────────
 
 test("searchFrontendDocs finds relevant documentation pages", () => {
-  const results = searchFrontendDocs("useActionState");
+  const results = searchFrontendDocs(BUNDLED_ENTRIES, "useActionState");
   assert.ok(results.length > 0);
   assert.equal(results[0].framework, "react");
 
-  const tailwindResults = searchFrontendDocs("vite", { framework: "tailwind" });
+  const tailwindResults = searchFrontendDocs(BUNDLED_ENTRIES, "vite", { framework: "tailwind" });
   assert.ok(tailwindResults.length > 0);
   assert.equal(tailwindResults[0].path, "tailwind/installation-vite");
 });
 
 test("resolveDocEntry locates docs by full or partial path", () => {
-  const exact = resolveDocEntry("react/upgrade-react-19");
+  const exact = resolveDocEntry(BUNDLED_ENTRIES, "react/upgrade-react-19");
   assert.ok(exact);
   assert.equal(exact.framework, "react");
 
-  const partial = resolveDocEntry("upgrade-react-19");
+  const partial = resolveDocEntry(BUNDLED_ENTRIES, "upgrade-react-19");
   assert.ok(partial);
   assert.equal(partial.path, "react/upgrade-react-19");
 });
 
 test("readDocContent handles outline and section extraction", async () => {
-  const entry = resolveDocEntry("react/upgrade-react-19");
+  const entry = resolveDocEntry(BUNDLED_ENTRIES, "react/upgrade-react-19");
   assert.ok(entry);
 
   const outline = await readDocContent(entry, { outline: true });
   assert.match(outline.output, /Outline — React 19/);
+  assert.match(outline.output, /bundled copy/);
   assert.match(outline.output, /Removed Legacy APIs/);
   assert.match(outline.output, /tokens/);
 
@@ -269,7 +276,7 @@ test("renderBestPractices returns helpful message when no topics match", () => {
 });
 
 test("readDocContent with nonexistent section shows available headings", async () => {
-  const entry = resolveDocEntry("react/upgrade-react-19");
+  const entry = resolveDocEntry(BUNDLED_ENTRIES, "react/upgrade-react-19");
   assert.ok(entry);
 
   const result = await readDocContent(entry, { section: "Nonexistent Section XYZ" });
@@ -278,7 +285,7 @@ test("readDocContent with nonexistent section shows available headings", async (
 });
 
 test("searchFrontendDocs returns empty for impossible framework filter", () => {
-  const results = searchFrontendDocs("useActionState", { framework: "unknown-fw" });
+  const results = searchFrontendDocs(BUNDLED_ENTRIES, "useActionState", { framework: "unknown-fw" });
   assert.equal(results.length, 0);
 });
 
@@ -319,4 +326,89 @@ test("detectProject reports package manager and config files", () => {
   } finally {
     rmSync(tempDir, { recursive: true, force: true });
   }
+});
+
+// ─── version-aware API lifecycle ─────────────────────────────────────────────
+
+test("compareVersions orders versions numerically, not lexically", () => {
+  assert.equal(compareVersions("19", "19.0.0"), 0);
+  assert.ok(compareVersions("18.3.1", "19.0.0") < 0);
+  assert.ok(compareVersions("19.1.0", "19.0.0") > 0);
+  // "10" must sort above "9", which a string comparison would get wrong.
+  assert.ok(compareVersions("10.0.0", "9.0.0") > 0);
+  assert.equal(compareVersions("v19.0.0", "19.0.0"), 0);
+});
+
+test("statusAsOf reports the status in the version asked about", () => {
+  const render = API_ENTRIES.find((e) => e.symbol === "render" && e.package === "react-dom");
+
+  // The defect this fixes: in React 18 `render` is deprecated but still present,
+  // so reporting the end state would send an agent to rewrite working code.
+  const at18 = statusAsOf(render, "18.0.0");
+  assert.equal(at18.status, "deprecated");
+  assert.match(at18.note, /still present in 18\.0\.0/);
+
+  assert.equal(statusAsOf(render, "19.0.0").status, "removed");
+  assert.equal(statusAsOf(render, "19.2.0").status, "removed");
+
+  // With no version the lifetime summary is the only honest answer.
+  assert.equal(statusAsOf(render, undefined).status, render.status);
+  assert.equal(statusAsOf(render, undefined).note, null);
+});
+
+test("statusAsOf reports an API that does not exist yet", () => {
+  const hook = API_ENTRIES.find((e) => e.symbol === "useActionState");
+  const early = statusAsOf(hook, "18.2.0");
+  assert.equal(early.status, "unavailable");
+  assert.match(early.note, /introduced in 19\.0\.0/);
+
+  assert.equal(statusAsOf(hook, "19.0.0").status, "current");
+});
+
+test("queryApi attaches the version resolution and the report prints it", () => {
+  const matches = queryApi({ name: "render", package: "react-dom", version: "18.0.0" });
+  assert.ok(matches.length > 0);
+  assert.equal(matches[0].asOf.status, "deprecated");
+
+  const report = formatApiReport(matches, { name: "render", version: "18.0.0" });
+  assert.match(report, /evaluated against version 18\.0\.0/);
+  assert.match(report, /\[DEPRECATED\]/);
+  assert.match(report, /Status in 18\.0\.0/);
+});
+
+// ─── path resolution ─────────────────────────────────────────────────────────
+
+test("resolveDocEntry prefers an exact path over a looser match", () => {
+  const entries = [
+    { path: "react/hooks", title: "Hooks", framework: "react" },
+    { path: "react/reference/react/hooks", title: "Hooks Reference", framework: "react" },
+  ];
+
+  assert.equal(resolveDocEntry(entries, "react/hooks").title, "Hooks");
+  assert.equal(
+    resolveDocEntry(entries, "react/reference/react/hooks").title,
+    "Hooks Reference"
+  );
+});
+
+test("resolveDocEntry does not silently pick one of many substring matches", () => {
+  const entries = [
+    { path: "react/reference/react/useState", title: "useState", framework: "react" },
+    { path: "react/reference/react/useEffect", title: "useEffect", framework: "react" },
+    { path: "react/reference/react/useMemo", title: "useMemo", framework: "react" },
+  ];
+
+  // "react" is a substring of all three; guessing would be worse than declining.
+  assert.equal(resolveDocEntry(entries, "react"), null);
+  assert.equal(resolveDocEntry(entries, "useEffect").title, "useEffect");
+});
+
+test("resolveDocEntry tolerates slashes, casing and a markdown suffix", () => {
+  const entries = [{ path: "tailwind/dark-mode", title: "Dark Mode", framework: "tailwind" }];
+
+  for (const input of ["/tailwind/dark-mode", "tailwind/dark-mode/", "Tailwind/Dark-Mode", "tailwind/dark-mode.md"]) {
+    assert.equal(resolveDocEntry(entries, input)?.title, "Dark Mode", `failed for ${input}`);
+  }
+
+  assert.equal(resolveDocEntry(entries, ""), null);
 });

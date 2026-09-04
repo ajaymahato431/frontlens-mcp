@@ -1,0 +1,21 @@
+{
+  "title": "API Reference",
+  "path": "/reference/react",
+  "routes": [
+    { "hasSectionHeader": true, "sectionHeader": "react@19" },
+    { "title": "Overview", "path": "/reference/react" },
+    {
+      "title": "Hooks",
+      "path": "/reference/react/hooks",
+      "routes": [
+        { "title": "useActionState", "path": "/reference/react/useActionState" },
+        { "title": "useOptimistic", "path": "/reference/react/useOptimistic" }
+      ]
+    },
+    {
+      "title": "Components",
+      "path": "/reference/react/components",
+      "routes": [{ "title": "<Suspense>", "path": "/reference/react/Suspense" }]
+    }
+  ]
+}

@@ -482,6 +482,83 @@ export const API_ENTRIES = [
 ];
 
 /**
+ * Compares two dotted version strings numerically.
+ *
+ * Returns a negative number when `a` sorts before `b`, zero when they are equal,
+ * positive otherwise. Missing segments count as zero, so "19" equals "19.0.0",
+ * and any non-numeric suffix ("19.0.0-rc.1") is ignored for ordering.
+ */
+export function compareVersions(a, b) {
+  const parse = (value) =>
+    String(value ?? "")
+      .trim()
+      .replace(/^[^\d]*/, "")
+      .split(/[.\-+]/)
+      .map((part) => Number.parseInt(part, 10));
+
+  const left = parse(a);
+  const right = parse(b);
+
+  for (let i = 0; i < Math.max(left.length, right.length); i++) {
+    const l = Number.isFinite(left[i]) ? left[i] : 0;
+    const r = Number.isFinite(right[i]) ? right[i] : 0;
+    if (l !== r) return l - r;
+  }
+
+  return 0;
+}
+
+/**
+ * Resolves an API's status *as of* a specific version.
+ *
+ * The registry records a lifetime — introduced here, deprecated there, removed
+ * later. Without a version the only honest answer is that lifetime summary, but
+ * an agent working in a React 18 codebase needs to know that `render` is
+ * deprecated-but-present, not removed. Answering with the end state would send
+ * it to rewrite code that still works.
+ */
+export function statusAsOf(entry, version) {
+  if (!version) return { status: entry.status, note: null, version: null };
+
+  const at = String(version).trim();
+
+  if (entry.removedIn && compareVersions(at, entry.removedIn) >= 0) {
+    return {
+      status: "removed",
+      version: at,
+      note: `Removed in ${entry.removedIn}${entry.replacement ? `; use \`${entry.replacement}\`` : ""}.`,
+    };
+  }
+
+  if (entry.deprecatedIn && compareVersions(at, entry.deprecatedIn) >= 0) {
+    const removal = entry.removedIn ? ` It is removed in ${entry.removedIn}.` : "";
+    return {
+      status: "deprecated",
+      version: at,
+      note: `Deprecated in ${entry.deprecatedIn} but still present in ${at}.${removal}`,
+    };
+  }
+
+  if (entry.introducedIn && compareVersions(at, entry.introducedIn) < 0) {
+    return {
+      status: "unavailable",
+      version: at,
+      note: `Not available in ${at}; introduced in ${entry.introducedIn}.`,
+    };
+  }
+
+  if (entry.introducedIn) {
+    return {
+      status: "current",
+      version: at,
+      note: `Available and current in ${at} (introduced in ${entry.introducedIn}).`,
+    };
+  }
+
+  return { status: entry.status, version: at, note: null };
+}
+
+/**
  * Scores a single API entry against a query. Higher is better; 0 means no match.
  */
 function scoreApiMatch(entry, query) {
@@ -517,7 +594,7 @@ export function queryApi({ name, package: pkg, version }) {
     .map((entry) => ({ ...entry, _score: scoreApiMatch(entry, q) }))
     .filter((entry) => entry._score > 0)
     .sort((a, b) => b._score - a._score)
-    .map(({ _score, ...entry }) => entry);
+    .map(({ _score, ...entry }) => ({ ...entry, asOf: statusAsOf(entry, version) }));
 }
 
 /**
@@ -534,10 +611,16 @@ export function formatApiReport(matches, query) {
   }
 
   const sections = matches.map((item) => {
-    const badge = item.status.toUpperCase();
+    // With a version in hand, the status *in that version* is the answer the
+    // caller asked for; the lifetime fields below still give the full picture.
+    const effective = item.asOf?.version ? item.asOf.status : item.status;
+    const badge = effective.toUpperCase();
     const lines = [
       `### \`${item.symbol}\` (${item.package}) — [${badge}]`,
-      `- **Status**: ${item.status}`,
+      item.asOf?.version
+        ? `- **Status in ${item.asOf.version}**: ${effective}`
+        : `- **Status**: ${item.status}`,
+      item.asOf?.note ? `- **As of ${item.asOf.version}**: ${item.asOf.note}` : null,
       item.introducedIn ? `- **Introduced in**: ${item.introducedIn}` : null,
       item.deprecatedIn ? `- **Deprecated in**: ${item.deprecatedIn}` : null,
       item.removedIn ? `- **Removed in**: ${item.removedIn}` : null,
@@ -561,5 +644,6 @@ export function formatApiReport(matches, query) {
     return lines.join("\n");
   });
 
-  return `# FrontLens API Intelligence\n\nFound ${matches.length} matching API definition(s):\n\n${sections.join("\n\n---\n\n")}`;
+  const scope = query?.version ? ` (evaluated against version ${query.version})` : "";
+  return `# FrontLens API Intelligence${scope}\n\nFound ${matches.length} matching API definition(s):\n\n${sections.join("\n\n---\n\n")}`;
 }

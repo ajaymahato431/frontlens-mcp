@@ -1,0 +1,11 @@
+{
+  "sha": "fixture",
+  "truncated": false,
+  "tree": [
+    { "path": "README.md", "type": "blob" },
+    { "path": "packages/documentation/copy/en/Nightly Builds.md", "type": "blob" },
+    { "path": "packages/documentation/copy/en/declaration-files/Do's and Don'ts.md", "type": "blob" },
+    { "path": "packages/documentation/copy/en/project-config/tsconfig.json.md", "type": "blob" },
+    { "path": "packages/documentation/copy/en/handbook-v2/Everyday Types.md", "type": "blob" }
+  ]
+}

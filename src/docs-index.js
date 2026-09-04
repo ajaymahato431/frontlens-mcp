@@ -6,7 +6,7 @@
  * live documentation reading.
  */
 
-import { extractSection, renderOutline } from "./core/markdown.js";
+import { extractSection, renderOutline, estimateTokens } from "./core/markdown.js";
 import { searchEntries } from "./core/search.js";
 
 export const DOCS_ENTRIES = [
@@ -384,6 +384,310 @@ export default defineConfig({
 - \`"noUncheckedIndexedAccess": true\`: Treats array index access (\`arr[i]\`) as \`T | undefined\` preventing runtime index errors.
 `,
   },
+
+  // ─── Additional React ──────────────────────────────────────────────────────
+  {
+    path: "react/hooks-use-optimistic",
+    framework: "react",
+    title: "useOptimistic Hook Reference",
+    category: "Hooks",
+    summary: "React 19 hook for optimistic UI updates while async actions are in flight.",
+    bundledContent: `# useOptimistic Reference
+
+\`useOptimistic\` lets you show a different state while an async action is underway.
+
+## Signature
+\`\`\`tsx
+const [optimisticState, addOptimistic] = useOptimistic(state, updateFn);
+\`\`\`
+
+## Parameters
+- \`state\`: The value to return initially and whenever no action is pending.
+- \`updateFn(currentState, optimisticValue)\`: A pure function that merges the optimistic value.
+
+## Example
+\`\`\`tsx
+import { useOptimistic } from "react";
+
+function MessageList({ messages, sendMessage }) {
+  const [optimisticMessages, addOptimisticMessage] = useOptimistic(
+    messages,
+    (state, newMessage) => [...state, { text: newMessage, sending: true }]
+  );
+
+  async function formAction(formData) {
+    const message = formData.get("message");
+    addOptimisticMessage(message);
+    await sendMessage(message);
+  }
+
+  return (
+    <form action={formAction}>
+      {optimisticMessages.map((m, i) => (
+        <div key={i} style={{ opacity: m.sending ? 0.5 : 1 }}>{m.text}</div>
+      ))}
+      <input name="message" />
+      <button>Send</button>
+    </form>
+  );
+}
+\`\`\`
+`,
+  },
+  {
+    path: "react/hooks-use",
+    framework: "react",
+    title: "use() API Reference",
+    category: "Hooks",
+    summary: "React 19 API to read Promises and Context values conditionally inside components.",
+    bundledContent: `# use() API Reference
+
+\`use\` is a React API that lets you read the value of a resource like a Promise or context.
+
+## Reading Promises
+\`\`\`tsx
+import { use, Suspense } from "react";
+
+function Comments({ commentsPromise }) {
+  const comments = use(commentsPromise);
+  return <ul>{comments.map(c => <li key={c.id}>{c.text}</li>)}</ul>;
+}
+
+// Wrap in Suspense:
+<Suspense fallback={<Loading />}>
+  <Comments commentsPromise={fetchComments()} />
+</Suspense>
+\`\`\`
+
+## Reading Context Conditionally
+Unlike \`useContext\`, \`use\` can be called inside loops and conditionals:
+\`\`\`tsx
+function HelpText({ show }) {
+  if (show) {
+    const theme = use(ThemeContext);
+    return <p style={{ color: theme.color }}>Help text</p>;
+  }
+  return null;
+}
+\`\`\`
+`,
+  },
+
+  // ─── Additional Next.js ────────────────────────────────────────────────────
+  {
+    path: "nextjs/server-actions",
+    framework: "nextjs",
+    title: "Next.js Server Actions and Mutations",
+    category: "Data Fetching",
+    summary: "Server Actions for form handling, data mutations, and cache revalidation in App Router.",
+    bundledContent: `# Server Actions and Mutations
+
+Server Actions are asynchronous functions that execute on the server. They can be called from Client and Server Components.
+
+## Defining a Server Action
+\`\`\`tsx
+"use server";
+
+export async function createTodo(formData: FormData) {
+  const title = formData.get("title") as string;
+  await db.todos.create({ data: { title } });
+  revalidatePath("/todos");
+}
+\`\`\`
+
+## Using in a Form
+\`\`\`tsx
+import { createTodo } from "@/actions/todos";
+
+export default function TodoForm() {
+  return (
+    <form action={createTodo}>
+      <input name="title" required />
+      <button type="submit">Add Todo</button>
+    </form>
+  );
+}
+\`\`\`
+
+## With useActionState
+\`\`\`tsx
+"use client";
+import { useActionState } from "react";
+import { createTodo } from "@/actions/todos";
+
+export function TodoForm() {
+  const [state, formAction, isPending] = useActionState(createTodo, null);
+  return (
+    <form action={formAction}>
+      <input name="title" />
+      <button disabled={isPending}>{isPending ? "Adding..." : "Add"}</button>
+      {state?.error && <p>{state.error}</p>}
+    </form>
+  );
+}
+\`\`\`
+`,
+  },
+  {
+    path: "nextjs/metadata",
+    framework: "nextjs",
+    title: "Next.js Metadata API and SEO",
+    category: "Configuration",
+    summary: "Static and dynamic metadata generation for SEO, Open Graph, and social sharing in App Router.",
+    bundledContent: `# Metadata API
+
+## Static Metadata
+Export a \`metadata\` object from a \`layout.tsx\` or \`page.tsx\`:
+\`\`\`tsx
+import type { Metadata } from "next";
+
+export const metadata: Metadata = {
+  title: "My Application",
+  description: "Built with Next.js",
+  openGraph: {
+    title: "My Application",
+    type: "website",
+  },
+};
+\`\`\`
+
+## Dynamic Metadata
+Export an async \`generateMetadata\` function:
+\`\`\`tsx
+export async function generateMetadata({ params }: {
+  params: Promise<{ slug: string }>;
+}): Promise<Metadata> {
+  const { slug } = await params;
+  const post = await getPost(slug);
+  return {
+    title: post.title,
+    description: post.excerpt,
+    openGraph: { images: [{ url: post.image }] },
+  };
+}
+\`\`\`
+
+## File-based Metadata
+- \`opengraph-image.tsx\` — Dynamic OG image generation
+- \`favicon.ico\` / \`icon.tsx\` — App icons
+- \`sitemap.ts\` — Dynamic sitemap
+- \`robots.ts\` — Dynamic robots.txt
+`,
+  },
+  {
+    path: "nextjs/caching",
+    framework: "nextjs",
+    title: "Next.js Caching and Revalidation",
+    category: "Data Fetching",
+    summary: "How caching works in Next.js 15+: fetch defaults, revalidateTag, revalidatePath, and React cache().",
+    bundledContent: `# Caching in Next.js 15+
+
+## Fetch Defaults Changed
+In Next.js 15+, \`fetch()\` defaults to \`cache: 'no-store'\` (uncached). Opt in to caching explicitly:
+\`\`\`tsx
+const data = await fetch("https://api.example.com/data", {
+  cache: "force-cache",
+  next: { revalidate: 3600, tags: ["data"] },
+});
+\`\`\`
+
+## Tag-based Revalidation
+\`\`\`tsx
+import { revalidateTag } from "next/cache";
+
+export async function updateData() {
+  "use server";
+  await db.update();
+  revalidateTag("data");
+}
+\`\`\`
+
+## Path-based Revalidation
+\`\`\`tsx
+import { revalidatePath } from "next/cache";
+revalidatePath("/dashboard");
+\`\`\`
+
+## React cache() for Request Deduplication
+\`\`\`tsx
+import { cache } from "react";
+
+export const getUser = cache(async (id: string) => {
+  return await db.users.findUnique({ where: { id } });
+});
+\`\`\`
+`,
+  },
+
+  // ─── Additional Tailwind ───────────────────────────────────────────────────
+  {
+    path: "tailwind/dark-mode",
+    framework: "tailwind",
+    title: "Tailwind CSS v4 Dark Mode",
+    category: "Configuration",
+    summary: "Configuring dark mode in Tailwind v4 with prefers-color-scheme or class-based toggling.",
+    bundledContent: `# Dark Mode in Tailwind CSS v4
+
+## Default: System Preference
+By default, \`dark:\` respects \`prefers-color-scheme: dark\`:
+\`\`\`html
+<div class="bg-white dark:bg-slate-900">
+  Adapts to system dark mode automatically
+</div>
+\`\`\`
+
+## Class-Based Dark Mode
+Use \`@custom-variant\` to toggle dark mode via a CSS class:
+\`\`\`css
+@import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
+\`\`\`
+
+Then toggle with JavaScript:
+\`\`\`tsx
+document.documentElement.classList.toggle("dark");
+\`\`\`
+`,
+  },
+  {
+    path: "tailwind/custom-utilities",
+    framework: "tailwind",
+    title: "Tailwind CSS v4 Custom Utilities and Variants",
+    category: "Configuration",
+    summary: "Registering custom utility classes and variants in CSS with @utility and @variant in v4.",
+    bundledContent: `# Custom Utilities and Variants in Tailwind v4
+
+## Custom Utilities with @utility
+Register custom utility classes directly in CSS:
+\`\`\`css
+@utility tab-4 {
+  tab-size: 4;
+}
+
+@utility content-auto {
+  content-visibility: auto;
+}
+\`\`\`
+
+## Custom Variants with @variant
+Register custom variants in CSS:
+\`\`\`css
+@variant pointer-coarse (@media (pointer: coarse));
+@variant hocus (&:hover, &:focus);
+\`\`\`
+
+Usage:
+\`\`\`html
+<button class="hocus:ring-2 pointer-coarse:p-4">Click</button>
+\`\`\`
+
+## Content Sources with @source
+Add paths for automatic class detection:
+\`\`\`css
+@source "../node_modules/@my-company/ui/src";
+\`\`\`
+`,
+  },
 ];
 
 /**
@@ -433,21 +737,24 @@ export async function readDocContent(entry, { section, outline, http } = {}) {
     }
   }
 
+  const tokens = estimateTokens(content);
+
   if (outline) {
     return {
       title: entry.title,
       path: entry.path,
-      output: `# Outline — ${entry.title} (${entry.path})\n\n${renderOutline(content)}`,
+      output: `# Outline — ${entry.title} (${entry.path})\nFull page: ~${tokens} tokens\n\n${renderOutline(content)}`,
     };
   }
 
   if (section) {
     const extracted = extractSection(content, section);
     if (extracted) {
+      const sectionTokens = estimateTokens(extracted);
       return {
         title: entry.title,
         path: entry.path,
-        output: `# ${entry.title} > Section: ${section}\n\n${extracted}`,
+        output: `# ${entry.title} > Section: ${section}\n~${sectionTokens} tokens\n\n${extracted}`,
       };
     }
 
@@ -464,6 +771,6 @@ export async function readDocContent(entry, { section, outline, http } = {}) {
   return {
     title: entry.title,
     path: entry.path,
-    output: content,
+    output: `${content}\n\n---\n~${tokens} tokens`,
   };
 }

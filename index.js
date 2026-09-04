@@ -43,6 +43,7 @@ const http = createHttpClient({
   retries: config.retries,
   cacheMax: config.cacheMax,
   defaultTtl: config.docTtlMs,
+  indexTtl: config.indexTtlMs,
   negativeTtl: config.negativeTtlMs,
   headers: config.githubToken ? { authorization: `Bearer ${config.githubToken}` } : {},
 });

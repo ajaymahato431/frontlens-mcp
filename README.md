@@ -117,8 +117,8 @@ Add to your `mcp_config.json` (or `.gemini/config/mcp_config.json`):
 {
   "mcpServers": {
     "frontlens": {
-      "command": "node",
-      "args": ["c:/laragon/www/mcp-server/frontlens-mcp/index.js"]
+      "command": "npx",
+      "args": ["-y", "frontlens-mcp"]
     }
   }
 }

@@ -206,9 +206,117 @@ test("readDocContent handles outline and section extraction", async () => {
   const outline = await readDocContent(entry, { outline: true });
   assert.match(outline.output, /Outline — React 19/);
   assert.match(outline.output, /Removed Legacy APIs/);
+  assert.match(outline.output, /tokens/);
 
   const section = await readDocContent(entry, { section: "Removed Legacy APIs" });
   assert.match(section.output, /ReactDOM\.render/);
   assert.match(section.output, /createRoot/);
   assert.doesNotMatch(section.output, /React Compiler/);
+  assert.match(section.output, /tokens/);
+});
+
+// ─── edge cases ──────────────────────────────────────────────────────────────
+
+test("detectProject returns found=false when no package.json exists", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "frontlens-empty-"));
+  try {
+    const result = detectProject(tempDir);
+    assert.equal(result.found, false);
+    assert.match(result.message, /No package\.json/);
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("queryApi returns empty array for unknown symbols", () => {
+  const matches = queryApi({ name: "totallyUnknownSymbol12345" });
+  assert.equal(matches.length, 0);
+
+  const report = formatApiReport(matches, { name: "totallyUnknownSymbol12345" });
+  assert.match(report, /No known deprecations/);
+  assert.match(report, /Tip/);
+});
+
+test("queryApi ranks exact matches above partial matches", () => {
+  const matches = queryApi({ name: "use" });
+  // "use" should be exact match for the `use` API, not just partial matches
+  assert.ok(matches.length > 0);
+  assert.equal(matches[0].symbol, "use");
+});
+
+test("formatMigrationReport handles null migration gracefully", () => {
+  const report = formatMigrationReport(null);
+  assert.match(report, /Migration Guide Not Found/);
+  assert.match(report, /Available migration guides/);
+});
+
+test("resolveMigration returns latest migration when no from/to given", () => {
+  const mig = resolveMigration({ framework: "nextjs" });
+  assert.ok(mig);
+  // Should return the latest Next.js migration (15→16)
+  assert.equal(mig.to, "16");
+});
+
+test("filterBestPractices with 'all' returns all entries", () => {
+  const all = filterBestPractices({ framework: "all" });
+  assert.ok(all.length >= 10, "should return all best practice entries");
+});
+
+test("renderBestPractices returns helpful message when no topics match", () => {
+  const rendered = renderBestPractices([]);
+  assert.match(rendered, /No topics matched/);
+  assert.match(rendered, /Available topics/);
+});
+
+test("readDocContent with nonexistent section shows available headings", async () => {
+  const entry = resolveDocEntry("react/upgrade-react-19");
+  assert.ok(entry);
+
+  const result = await readDocContent(entry, { section: "Nonexistent Section XYZ" });
+  assert.match(result.output, /was not found/);
+  assert.match(result.output, /Available headings/);
+});
+
+test("searchFrontendDocs returns empty for impossible framework filter", () => {
+  const results = searchFrontendDocs("useActionState", { framework: "unknown-fw" });
+  assert.equal(results.length, 0);
+});
+
+test("resolveMigration resolves new Vite 5 to 6 migration", () => {
+  const mig = resolveMigration({ framework: "vite", from: "5", to: "6" });
+  assert.ok(mig);
+  assert.equal(mig.framework, "vite");
+  assert.match(mig.title, /Vite 5/);
+  assert.ok(mig.breakingChanges.length > 0);
+});
+
+test("resolveMigration resolves new TypeScript migration", () => {
+  const mig = resolveMigration({ framework: "typescript" });
+  assert.ok(mig);
+  assert.equal(mig.framework, "typescript");
+});
+
+test("detectProject reports package manager and config files", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "frontlens-pm-"));
+  try {
+    const pkg = {
+      name: "pm-test",
+      dependencies: { react: "^19.0.0" },
+    };
+    writeFileSync(join(tempDir, "package.json"), JSON.stringify(pkg));
+    writeFileSync(join(tempDir, "package-lock.json"), "{}");
+    writeFileSync(join(tempDir, "tsconfig.json"), "{}");
+
+    const result = detectProject(tempDir);
+    assert.equal(result.found, true);
+    assert.equal(result.packageManager, "npm");
+    assert.equal(result.configs.typescript, "tsconfig.json");
+
+    const report = formatProjectReport(result);
+    assert.match(report, /Package Manager: npm/);
+    assert.match(report, /Configuration Files/);
+    assert.match(report, /tsconfig\.json/);
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
 });

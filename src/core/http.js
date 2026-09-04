@@ -48,6 +48,7 @@ export function createHttpClient({
   maxRetryDelayMs = 5000,
   cacheMax = 100,
   defaultTtl = 3 * 60 * 60 * 1000,
+  indexTtl = 6 * 60 * 60 * 1000,
   negativeTtl = 60 * 1000,
   headers: baseHeaders = {},
   cache = new DocCache({ max: cacheMax }),
@@ -94,6 +95,7 @@ export function createHttpClient({
 
   return {
     cache,
+    indexTtl,
 
     async fetchText(url, { ttl = defaultTtl, headers, signal } = {}) {
       return cache.through(

@@ -149,22 +149,163 @@ export const MIGRATIONS = [
     ],
     officialUrl: "https://nextjs.org/docs/app/building-your-application/upgrading/version-15",
   },
+
+  // ─── Vite 5 → 6 ─────────────────────────────────────────────────────────
+  {
+    framework: "vite",
+    from: "5",
+    to: "6",
+    title: "Migrating from Vite 5 to Vite 6",
+    summary:
+      "Vite 6 introduces the Environment API for multi-environment builds, " +
+      "requires Node.js 18+, changes default `resolve.conditions`, " +
+      "and stabilizes several experimental features.",
+    codemod: null,
+    steps: [
+      {
+        title: "1. Update Vite and plugins",
+        details:
+          "Install Vite 6 and update all official plugins (`@vitejs/plugin-react`, `@tailwindcss/vite`, etc.).",
+        code: `npm install vite@^6 @vitejs/plugin-react@latest`,
+      },
+      {
+        title: "2. Ensure Node.js 18+",
+        details:
+          "Vite 6 drops support for Node.js 16 and 17. Verify your CI and local environments run Node.js 18+.",
+        code: `node --version  # Must be >= 18.0.0`,
+      },
+      {
+        title: "3. Adopt Environment API (if framework author)",
+        details:
+          "The new Environment API allows defining separate environments (client, SSR, edge) with independent configs. " +
+          "This is primarily for framework authors; app developers get the benefits automatically.",
+        code: `// vite.config.ts\nimport { defineConfig } from "vite";\n\nexport default defineConfig({\n  environments: {\n    client: { /* client build options */ },\n    ssr: { resolve: { conditions: ["node"] } },\n  },\n});`,
+      },
+      {
+        title: "4. Review resolve.conditions changes",
+        details:
+          "The default `resolve.conditions` no longer includes `module`. If a dependency relies on the `module` condition, add it explicitly.",
+        code: `// vite.config.ts\nexport default defineConfig({\n  resolve: {\n    conditions: ["module"],\n  },\n});`,
+      },
+    ],
+    breakingChanges: [
+      "Node.js 18+ required (dropped Node 16/17).",
+      "Default `resolve.conditions` changed — `module` condition no longer included by default.",
+      "CSS `@import` in SSR mode now uses ESM loader semantics.",
+      "`this.environment` in plugins replaces `this.ssr` boolean.",
+    ],
+    officialUrl: "https://vite.dev/guide/migration.html",
+  },
+
+  // ─── TypeScript 5.4 → 5.8 ─────────────────────────────────────────────────
+  {
+    framework: "typescript",
+    from: "5",
+    to: "5.8",
+    title: "Upgrading TypeScript to 5.8",
+    summary:
+      "TypeScript 5.5–5.8 introduces inferred type predicates, " +
+      "`--isolatedDeclarations` for parallel .d.ts emit, `--erasableSyntaxOnly` mode, " +
+      "and native support for `require()` of ESM in Node.js.",
+    codemod: null,
+    steps: [
+      {
+        title: "1. Update TypeScript",
+        details: "Install the latest TypeScript 5.8 release.",
+        code: `npm install typescript@~5.8`,
+      },
+      {
+        title: "2. Consider --isolatedDeclarations",
+        details:
+          "Enables parallel declaration emit without full type-checking. Requires explicit return types on exported functions.",
+        code: `{\n  "compilerOptions": {\n    "isolatedDeclarations": true,\n    "declaration": true\n  }\n}`,
+      },
+      {
+        title: "3. Review --erasableSyntaxOnly",
+        details:
+          "When set, TypeScript errors on syntax that cannot be erased by simply removing types (enums, parameter properties, namespaces). " +
+          "This ensures compatibility with Node.js `--experimental-strip-types`.",
+        code: `{\n  "compilerOptions": {\n    "erasableSyntaxOnly": true\n  }\n}`,
+      },
+      {
+        title: "4. Leverage inferred type predicates (TS 5.5+)",
+        details:
+          "TypeScript can now infer `x is T` return types for filter callbacks, improving array narrowing automatically.",
+        code: `// TS 5.5+ infers the type predicate automatically:\nconst strings = mixed.filter((x) => typeof x === "string");\n// strings is string[] (not (string | number)[])`,
+      },
+    ],
+    breakingChanges: [
+      "Stricter handling of computed property narrowing.",
+      "`isolatedDeclarations` requires explicit return types on all exported functions.",
+      "`erasableSyntaxOnly` prohibits enums (except `const enum`), parameter properties, and namespaces.",
+    ],
+    officialUrl: "https://www.typescriptlang.org/docs/handbook/release-notes/typescript-5-8.html",
+  },
+
+  // ─── Next.js 15 → 16 ──────────────────────────────────────────────────────
+  {
+    framework: "nextjs",
+    from: "15",
+    to: "16",
+    title: "Migrating from Next.js 15 to Next.js 16",
+    summary:
+      "Next.js 16 requires React 19, makes Turbopack the default bundler for dev, " +
+      "stabilizes `after()`, and introduces improved streaming and caching defaults.",
+    codemod: "npx @next/codemod@canary upgrade latest",
+    steps: [
+      {
+        title: "1. Ensure React 19",
+        details:
+          "Next.js 16 requires React 19 as a peer dependency. Upgrade both React packages.",
+        code: `npm install next@^16 react@^19 react-dom@^19`,
+      },
+      {
+        title: "2. Turbopack is the default dev bundler",
+        details:
+          "Turbopack is now the default for `next dev`. Webpack is still available via `next dev --webpack`.",
+        code: `# Default (Turbopack):\nnpx next dev\n\n# Fallback to Webpack if needed:\nnpx next dev --webpack`,
+      },
+      {
+        title: "3. Use after() for post-response work",
+        details:
+          "`after()` is now stable. Use it for logging, analytics, and non-critical side effects that shouldn't block the response.",
+        code: `import { after } from "next/server";\n\nexport default function Layout({ children }) {\n  after(() => {\n    analytics.track("page-view");\n  });\n  return <>{children}</>;\n}`,
+      },
+    ],
+    breakingChanges: [
+      "React 19 required as peer dependency.",
+      "Turbopack is the default dev bundler (use `--webpack` to opt out).",
+      "`after()` API is stable (remove experimental flag if set).",
+      "Improved default caching behavior — review `staleTimes` configuration.",
+    ],
+    officialUrl: "https://nextjs.org/blog/next-16",
+  },
 ];
 
 /**
- * Finds a matching migration guide.
+ * Finds a matching migration guide. When no from/to is specified,
+ * returns the most recent migration for the framework.
  */
 export function resolveMigration({ framework, from, to }) {
   const fw = String(framework || "").toLowerCase().trim();
   const fromVer = from ? String(from).trim().replace(/^[^\d]*/, "") : null;
   const toVer = to ? String(to).trim().replace(/^[^\d]*/, "") : null;
 
-  return MIGRATIONS.find((m) => {
+  const candidates = MIGRATIONS.filter((m) => {
     if (m.framework !== fw && !fw.includes(m.framework)) return false;
     if (fromVer && !m.from.startsWith(fromVer)) return false;
     if (toVer && !m.to.startsWith(toVer)) return false;
     return true;
   });
+
+  if (candidates.length === 0) return undefined;
+
+  // When no version filters given, prefer the latest migration (highest `to`)
+  if (!fromVer && !toVer && candidates.length > 1) {
+    return candidates.sort((a, b) => parseFloat(b.to) - parseFloat(a.to))[0];
+  }
+
+  return candidates[0];
 }
 
 /**

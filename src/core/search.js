@@ -24,6 +24,8 @@ export function scoreMatch(entry, query) {
 
   const title = normalize(entry.title);
   const path = normalize(entry.path);
+  const summary = normalize(entry.summary);
+  const category = normalize(entry.category);
 
   if (title === q) return 100;
   if (path === q) return 95;
@@ -31,11 +33,14 @@ export function scoreMatch(entry, query) {
   if (title.includes(q)) return 60;
   if (path.endsWith(`/${q}`)) return 55;
   if (path.includes(q)) return 40;
+  if (category === q) return 35;
 
   const words = q.split(WORD_SPLIT).filter(Boolean);
   if (words.length === 0) return 0;
 
-  const matched = words.filter((w) => title.includes(w) || path.includes(w)).length;
+  const matched = words.filter(
+    (w) => title.includes(w) || path.includes(w) || summary.includes(w) || category.includes(w)
+  ).length;
   if (matched === 0) return 0;
 
   // Partial coverage caps below any whole-query match above.

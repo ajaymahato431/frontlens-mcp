@@ -118,6 +118,89 @@ export const BEST_PRACTICES = {
     ],
     code: `// Discriminated union for asynchronous states:\ntype AsyncState<T> =\n  | { status: "idle" }\n  | { status: "loading" }\n  | { status: "success"; data: T }\n  | { status: "error"; error: Error };\n\n// Using 'satisfies' to preserve exact literal types:\nconst themeConfig = {\n  primary: "#3b82f6",\n  secondary: "#10b981",\n} satisfies Record<string, string>;`,
   },
+
+  // ─── New: React Performance ────────────────────────────────────────────────
+  "react-performance": {
+    framework: "react",
+    title: "React 19 Performance and the React Compiler",
+    rules: [
+      "DO let the React Compiler handle memoization automatically in React 19 — avoid manual `useMemo`/`useCallback` for most cases.",
+      "DO use `React.lazy()` and `<Suspense>` for code-splitting heavy components.",
+      "DO use `useDeferredValue` for non-urgent UI updates like search filtering.",
+      "DO use `useTransition` to mark state updates as low-priority transitions.",
+      "DON'T prematurely optimize with `React.memo` wrappers everywhere — profile first with React DevTools.",
+    ],
+    code: `// Deferred search filtering (non-blocking):\nimport { useDeferredValue, useMemo } from "react";\n\nfunction SearchResults({ query, items }) {\n  const deferredQuery = useDeferredValue(query);\n  const filtered = useMemo(\n    () => items.filter(i => i.name.includes(deferredQuery)),\n    [items, deferredQuery]\n  );\n  return <ul>{filtered.map(i => <li key={i.id}>{i.name}</li>)}</ul>;\n}`,
+  },
+
+  // ─── New: Next.js Metadata ─────────────────────────────────────────────────
+  "next-metadata": {
+    framework: "nextjs",
+    title: "Dynamic Metadata and SEO in Next.js App Router",
+    rules: [
+      "DO export `generateMetadata` from page files for dynamic title, description, and Open Graph tags.",
+      "DO use the `metadata` static export for pages with fixed metadata.",
+      "DO implement `generateStaticParams` alongside `generateMetadata` for static generation.",
+      "DO use the `opengraph-image.tsx` convention for dynamic OG image generation.",
+      "DON'T use `<Head>` from `next/head` in App Router — that is Pages Router only.",
+    ],
+    code: `import type { Metadata } from "next";\n\n// Static metadata:\nexport const metadata: Metadata = {\n  title: "My App",\n  description: "A modern web application",\n};\n\n// Dynamic metadata:\nexport async function generateMetadata({ params }: {\n  params: Promise<{ slug: string }>;\n}): Promise<Metadata> {\n  const { slug } = await params;\n  const post = await getPost(slug);\n  return {\n    title: post.title,\n    description: post.excerpt,\n    openGraph: { images: [post.coverImage] },\n  };\n}`,
+  },
+
+  // ─── New: Next.js Caching ──────────────────────────────────────────────────
+  "next-caching": {
+    framework: "nextjs",
+    title: "Caching and Revalidation Strategies in Next.js 15+",
+    rules: [
+      "DO note that `fetch()` defaults to `cache: 'no-store'` (uncached) in Next.js 15+.",
+      "DO use `next.tags` with `revalidateTag()` for targeted cache invalidation.",
+      "DO use `revalidatePath()` to purge an entire route's cached data.",
+      "DO use `cache()` from React to deduplicate database calls across the component tree.",
+      "DON'T assume data is cached — explicitly set `cache: 'force-cache'` when static caching is desired.",
+    ],
+    code: `// Cached fetch with tag-based revalidation:\nconst data = await fetch("https://api.example.com/items", {\n  cache: "force-cache",\n  next: { tags: ["items"], revalidate: 3600 },\n});\n\n// Server Action that invalidates the cache:\n"use server";\nimport { revalidateTag } from "next/cache";\n\nexport async function createItem(formData: FormData) {\n  await db.items.create({ data: Object.fromEntries(formData) });\n  revalidateTag("items");\n}`,
+  },
+
+  // ─── New: Tailwind Dark Mode ───────────────────────────────────────────────
+  "tailwind-dark-mode": {
+    framework: "tailwind",
+    title: "Dark Mode Configuration in Tailwind CSS v4",
+    rules: [
+      "DO use the built-in `dark:` variant which respects `prefers-color-scheme` by default in v4.",
+      "DO use `@custom-variant dark (&:where(.dark, .dark *))` if you need class-based dark mode toggling.",
+      "DO define dark mode color tokens in `@theme` using CSS custom properties.",
+      "DON'T use `darkMode: 'class'` in `tailwind.config.js` — this is the v3 approach.",
+    ],
+    code: `/* Tailwind v4 class-based dark mode: */\n@import "tailwindcss";\n@custom-variant dark (&:where(.dark, .dark *));\n\n@theme {\n  --color-bg: #ffffff;\n  --color-bg-dark: #0f172a;\n  --color-text: #1e293b;\n  --color-text-dark: #e2e8f0;\n}\n\n/* Usage: */\n/* <div className="bg-bg dark:bg-bg-dark text-text dark:text-text-dark"> */`,
+  },
+
+  // ─── New: Vite Optimization ────────────────────────────────────────────────
+  "vite-optimization": {
+    framework: "vite",
+    title: "Vite Build Optimization and Performance",
+    rules: [
+      "DO use `optimizeDeps.include` to pre-bundle large CommonJS dependencies for faster cold starts.",
+      "DO use `build.rollupOptions.output.manualChunks` to control chunk splitting for better caching.",
+      "DO enable `build.sourcemap: true` in production for debugging, but use `'hidden'` to avoid exposing them publicly.",
+      "DO use `server.warmup` to pre-transform frequently used modules.",
+      "DON'T put secrets in `VITE_`-prefixed environment variables — they are embedded in the client bundle.",
+    ],
+    code: `// vite.config.ts\nimport { defineConfig } from "vite";\n\nexport default defineConfig({\n  optimizeDeps: {\n    include: ["lodash-es", "axios"],\n  },\n  build: {\n    sourcemap: "hidden",\n    rollupOptions: {\n      output: {\n        manualChunks: {\n          vendor: ["react", "react-dom"],\n        },\n      },\n    },\n  },\n  server: {\n    warmup: { clientFiles: ["./src/main.tsx", "./src/App.tsx"] },\n  },\n});`,
+  },
+
+  // ─── New: TypeScript Patterns ──────────────────────────────────────────────
+  "typescript-patterns": {
+    framework: "typescript",
+    title: "Advanced TypeScript Patterns for Frontend",
+    rules: [
+      "DO use `satisfies` to validate object shapes without losing literal type inference.",
+      "DO use branded types (nominal typing) for type-safe IDs and tokens.",
+      "DO use `using` for explicit resource management (TypeScript 5.2+).",
+      "DO use exhaustive switch checks with `never` to catch unhandled cases at compile time.",
+      "DON'T use `enum` in new code — prefer `as const` objects or union types for better tree-shaking.",
+    ],
+    code: `// Branded types for type-safe IDs:\ntype UserId = string & { readonly __brand: "UserId" };\ntype OrderId = string & { readonly __brand: "OrderId" };\n\nfunction getUser(id: UserId) { /* ... */ }\nconst uid = "abc123" as UserId;\ngetUser(uid); // OK\n// getUser("abc123" as OrderId); // Compile error!\n\n// Exhaustive switch:\nfunction assertNever(x: never): never {\n  throw new Error("Unexpected: " + x);\n}\n\nfunction handleStatus(s: "active" | "inactive" | "pending") {\n  switch (s) {\n    case "active": return "✅";\n    case "inactive": return "❌";\n    case "pending": return "⏳";\n    default: return assertNever(s);\n  }\n}`,
+  },
 };
 
 export const ALL_TOPICS = Object.keys(BEST_PRACTICES);

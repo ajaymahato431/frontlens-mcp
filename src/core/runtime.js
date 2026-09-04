@@ -26,10 +26,32 @@ export function errorResult(text) {
 
 /** Turns a thrown error into a readable, actionable tool result. */
 export function describeError(error, hint) {
-  const base =
-    error?.status !== undefined
-      ? `Upstream returned HTTP ${error.status}.`
-      : `Request failed: ${error?.message ?? String(error)}`;
+  let base;
+  if (error?.status !== undefined) {
+    base = `Upstream returned HTTP ${error.status}.`;
+    if (!hint) {
+      switch (error.status) {
+        case 403:
+          hint = "Rate-limited or forbidden. Set GITHUB_TOKEN in your environment to raise the anonymous rate limit.";
+          break;
+        case 404:
+          hint = "The requested documentation page was not found. Check the path with search_frontend_docs.";
+          break;
+        case 408:
+        case 504:
+          hint = "Request timed out. Try increasing --timeout (default 15000ms).";
+          break;
+        case 429:
+          hint = "Rate-limited by upstream. Wait a moment and retry, or set GITHUB_TOKEN.";
+          break;
+      }
+    }
+  } else if (error?.message?.includes?.("timed out")) {
+    base = `Request failed: ${error.message}`;
+    if (!hint) hint = "Try increasing --timeout (default 15000ms) or check network connectivity.";
+  } else {
+    base = `Request failed: ${error?.message ?? String(error)}`;
+  }
   return hint ? `${base}\n${hint}` : base;
 }
 

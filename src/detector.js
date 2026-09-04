@@ -22,9 +22,17 @@ export const TRACKED_PACKAGES = [
   "react-router",
   "react-router-dom",
   "@tanstack/react-query",
+  "@tanstack/react-router",
   "zustand",
   "postcss",
   "eslint",
+  "@vitejs/plugin-react",
+  "@vitejs/plugin-react-swc",
+  "next-auth",
+  "prisma",
+  "drizzle-orm",
+  "styled-components",
+  "@emotion/react",
 ];
 
 /**
@@ -47,7 +55,35 @@ export function findProjectRoot(startDir = process.cwd()) {
 }
 
 /**
- * Tries to read the exact installed version from node_modules or package-lock.json.
+ * Detects which package manager the project uses.
+ */
+function detectPackageManager(projectRoot) {
+  if (existsSync(join(projectRoot, "bun.lockb")) || existsSync(join(projectRoot, "bun.lock")))
+    return "bun";
+  if (existsSync(join(projectRoot, "pnpm-lock.yaml")))
+    return "pnpm";
+  if (existsSync(join(projectRoot, "yarn.lock")))
+    return "yarn";
+  if (existsSync(join(projectRoot, "package-lock.json")))
+    return "npm";
+  return "unknown";
+}
+
+/**
+ * Detects monorepo configuration.
+ */
+function detectMonorepo(projectRoot, pkg) {
+  const signals = [];
+  if (pkg.workspaces) signals.push("npm/yarn workspaces");
+  if (existsSync(join(projectRoot, "pnpm-workspace.yaml"))) signals.push("pnpm workspace");
+  if (existsSync(join(projectRoot, "turbo.json"))) signals.push("Turborepo");
+  if (existsSync(join(projectRoot, "nx.json"))) signals.push("Nx");
+  if (existsSync(join(projectRoot, "lerna.json"))) signals.push("Lerna");
+  return signals.length > 0 ? signals : null;
+}
+
+/**
+ * Tries to read the exact installed version from node_modules, lockfiles, or declared version.
  */
 function resolveInstalledVersion(projectRoot, packageName, declaredVersion) {
   // 1. Check node_modules/<package>/package.json
@@ -92,6 +128,7 @@ function inspectConfigs(projectRoot) {
     tailwind: null,
     postcss: null,
     typescript: null,
+    biome: null,
   };
 
   const checks = [
@@ -100,6 +137,7 @@ function inspectConfigs(projectRoot) {
     { key: "tailwind", files: ["tailwind.config.ts", "tailwind.config.js", "tailwind.config.cjs", "tailwind.config.mjs"] },
     { key: "postcss", files: ["postcss.config.js", "postcss.config.mjs", "postcss.config.cjs", "postcss.config.json"] },
     { key: "typescript", files: ["tsconfig.json"] },
+    { key: "biome", files: ["biome.json", "biome.jsonc"] },
   ];
 
   for (const { key, files } of checks) {
@@ -222,10 +260,19 @@ export function detectProject(directory = process.cwd()) {
   }
 
   const configs = inspectConfigs(root);
+  const packageManager = detectPackageManager(root);
+  const monorepo = detectMonorepo(root, pkg);
   const tailwindInfo = detectedPackages["tailwindcss"]
     ? inspectTailwindSetup(root, detectedPackages["tailwindcss"].installed)
     : null;
   const nextInfo = detectedPackages["next"] ? inspectNextArchitecture(root) : null;
+
+  // Detect Tailwind integration method
+  if (tailwindInfo) {
+    if (detectedPackages["@tailwindcss/vite"]) tailwindInfo.integration = "@tailwindcss/vite";
+    else if (detectedPackages["@tailwindcss/postcss"]) tailwindInfo.integration = "@tailwindcss/postcss";
+    else tailwindInfo.integration = "PostCSS (default)";
+  }
 
   // Compile advisories
   const advisories = [];
@@ -242,6 +289,13 @@ export function detectProject(directory = process.cwd()) {
       'Tailwind CSS v4 detected: Configuration is CSS-first using `@import "tailwindcss";` and `@theme` directives. ' +
         "No tailwind.config.js is required unless migrating."
     );
+    // Item 8: Alert if legacy config still exists alongside v4
+    if (configs.tailwind) {
+      advisories.push(
+        `Tailwind v4 project still has \`${configs.tailwind}\`. Consider removing it and using \`@theme\` in CSS instead. ` +
+          "Use `@config` directive only if gradual migration is needed."
+      );
+    }
   } else if (tailwindInfo?.isV3) {
     advisories.push(
       "Tailwind CSS v3 detected: Uses `@tailwind` directives and tailwind.config.js."
@@ -255,9 +309,11 @@ export function detectProject(directory = process.cwd()) {
   }
 
   if (detectedPackages["vite"] && detectedPackages["tailwindcss"] && tailwindInfo?.isV4) {
-    advisories.push(
-      "Vite + Tailwind v4: Use `@tailwindcss/vite` plugin in vite.config.ts for optimal compilation speed."
-    );
+    if (!detectedPackages["@tailwindcss/vite"]) {
+      advisories.push(
+        "Vite + Tailwind v4: Install `@tailwindcss/vite` plugin in vite.config.ts for optimal compilation speed. PostCSS is no longer required."
+      );
+    }
   }
 
   return {
@@ -266,6 +322,8 @@ export function detectProject(directory = process.cwd()) {
     projectRoot: root,
     framework,
     metaFramework,
+    packageManager,
+    monorepo,
     packages: detectedPackages,
     configs,
     tailwind: tailwindInfo,
@@ -286,9 +344,17 @@ export function formatProjectReport(result) {
     `# FrontLens Project Context: ${result.name}`,
     `Root: ${result.projectRoot}`,
     `Framework: ${result.framework || "None"} | Meta-Framework: ${result.metaFramework || "None"}`,
-    "",
-    "## Detected Ecosystem Packages",
   ];
+
+  if (result.packageManager && result.packageManager !== "unknown") {
+    lines.push(`Package Manager: ${result.packageManager}`);
+  }
+
+  if (result.monorepo) {
+    lines.push(`Monorepo: ${result.monorepo.join(", ")}`);
+  }
+
+  lines.push("", "## Detected Ecosystem Packages");
 
   for (const [pkg, info] of Object.entries(result.packages)) {
     const installed = info.installed ? ` (resolved: ${info.installed})` : "";
@@ -297,6 +363,15 @@ export function formatProjectReport(result) {
 
   if (Object.keys(result.packages).length === 0) {
     lines.push("- No known frontend packages detected in package.json.");
+  }
+
+  // Item 11: Display detected config files
+  const configEntries = Object.entries(result.configs).filter(([, v]) => v);
+  if (configEntries.length > 0) {
+    lines.push("", "## Configuration Files");
+    for (const [key, file] of configEntries) {
+      lines.push(`- **${key}**: \`${file}\``);
+    }
   }
 
   if (result.next) {
@@ -308,6 +383,9 @@ export function formatProjectReport(result) {
   if (result.tailwind) {
     lines.push("", `## Tailwind CSS: ${result.tailwind.isV4 ? "v4 (CSS-first)" : "v3 (JS-config)"}`);
     lines.push(`- Detection: ${result.tailwind.method}`);
+    if (result.tailwind.integration) {
+      lines.push(`- Integration: ${result.tailwind.integration}`);
+    }
   }
 
   if (result.advisories.length > 0) {

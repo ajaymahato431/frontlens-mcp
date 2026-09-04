@@ -1,0 +1,469 @@
+/**
+ * Documentation index and resolver for frontlens-mcp.
+ *
+ * Hybrid storage: bundles structured core documentation pages for offline
+ * availability and instant response, with upstream URL fallbacks for
+ * live documentation reading.
+ */
+
+import { extractSection, renderOutline } from "./core/markdown.js";
+import { searchEntries } from "./core/search.js";
+
+export const DOCS_ENTRIES = [
+  // ─── React ─────────────────────────────────────────────────────────────────
+  {
+    path: "react/upgrade-react-19",
+    framework: "react",
+    title: "React 19 Upgrade Guide and Removed APIs",
+    category: "Upgrades",
+    summary:
+      "Official guide to upgrading to React 19: removals of ReactDOM.render, hydrate, and forwardRef, " +
+      "introduction of Actions, useActionState, and ref as prop.",
+    remoteUrl: "https://raw.githubusercontent.com/facebook/react.dev/main/src/content/blog/2024/04/25/react-19-upgrade-guide.md",
+    bundledContent: `# React 19 Upgrade Guide
+
+React 19 introduces Actions, Server Functions, asset loading, and document metadata support.
+
+## Removed Legacy APIs
+- **ReactDOM.render**: Removed. Use \`createRoot\` from \`react-dom/client\`.
+- **ReactDOM.hydrate**: Removed. Use \`hydrateRoot\` from \`react-dom/client\`.
+- **ReactDOM.unmountComponentAtNode**: Removed. Use \`root.unmount()\`.
+- **defaultProps**: Removed for function components. Use JavaScript default function arguments.
+- **forwardRef**: Deprecated. Pass \`ref\` as a regular prop into function components.
+- **useFormState**: Deprecated. Replaced by \`useActionState\` in \`react\`.
+
+## Actions and Form Handling
+React 19 makes handling asynchronous transitions and form submissions first-class:
+- \`useActionState\`: Accepts an action function and returns \`[state, formAction, isPending]\`.
+- \`useFormStatus\`: Reads the pending and submission state of a parent \`<form>\`.
+- \`useOptimistic\`: Renders optimistic UI updates while an async action is processed.
+
+## Ref as a Prop
+Function components can now receive \`ref\` as a standard prop:
+\`\`\`tsx
+function MyInput({ ref, label }: { ref?: React.Ref<HTMLInputElement>; label: string }) {
+  return <input ref={ref} aria-label={label} />;
+}
+\`\`\`
+
+## React Compiler
+React 19 is built to work with the React Compiler, which automatically memoizes component renders and hook dependencies.
+`,
+  },
+  {
+    path: "react/hooks-use-action-state",
+    framework: "react",
+    title: "useActionState Hook Reference",
+    category: "Hooks",
+    summary: "Complete reference for React 19 useActionState hook, action functions, and pending states.",
+    remoteUrl: "https://raw.githubusercontent.com/facebook/react.dev/main/src/content/reference/react/useActionState.md",
+    bundledContent: `# useActionState Reference
+
+\`useActionState\` is a React hook that updates state based on the result of a form action.
+
+## Signature
+\`\`\`tsx
+const [state, formAction, isPending] = useActionState(fn, initialState, permalink?);
+\`\`\`
+
+## Parameters
+- \`fn\`: The action function called when the form is submitted. Receives \`(previousState, formData)\`.
+- \`initialState\`: The value you want the state to be initially.
+- \`permalink\`: Optional URL string for progressive enhancement.
+
+## Returns
+- \`state\`: The current state returned by the action.
+- \`formAction\`: A function you pass to a \`<form action={formAction}>\` or \`<button formAction={formAction}>\`.
+- \`isPending\`: A boolean indicating whether the action is currently in flight.
+
+## Example
+\`\`\`tsx
+import { useActionState } from "react";
+
+async function updateName(prevState: string, formData: FormData) {
+  const name = formData.get("name") as string;
+  await saveToDatabase(name);
+  return name;
+}
+
+export function NameForm() {
+  const [name, formAction, isPending] = useActionState(updateName, "Anonymous");
+
+  return (
+    <form action={formAction}>
+      <input name="name" defaultValue={name} />
+      <button disabled={isPending}>{isPending ? "Saving..." : "Update"}</button>
+    </form>
+  );
+}
+\`\`\`
+`,
+  },
+  {
+    path: "react/server-components",
+    framework: "react",
+    title: "React Server Components Fundamentals",
+    category: "Architecture",
+    summary: "Architecture and patterns for React Server Components (RSC) and Client Component boundaries.",
+    bundledContent: `# React Server Components
+
+Server Components render exclusively on the server with zero client bundle overhead.
+
+## Core Rules
+- Server Components cannot use browser APIs (\`window\`, \`localStorage\`) or React state/effects (\`useState\`, \`useEffect\`).
+- Mark Client Components with \`"use client"\` at the top of the file.
+- Client Components can accept Server Components as \`children\` props.
+
+## Boundary Composition Pattern
+\`\`\`tsx
+// ClientWrapper.tsx
+"use client";
+export function ClientWrapper({ children }: { children: React.ReactNode }) {
+  const [open, setOpen] = useState(false);
+  return <div><button onClick={() => setOpen(!open)}>Toggle</button>{open && children}</div>;
+}
+
+// ServerPage.tsx (Server Component)
+export default async function ServerPage() {
+  const data = await fetchDatabaseData();
+  return (
+    <ClientWrapper>
+      <DataDisplay data={data} />
+    </ClientWrapper>
+  );
+}
+\`\`\`
+`,
+  },
+
+  // ─── Tailwind CSS ──────────────────────────────────────────────────────────
+  {
+    path: "tailwind/installation-vite",
+    framework: "tailwind",
+    title: "Tailwind CSS v4 with Vite Setup",
+    category: "Installation",
+    summary: "Setting up Tailwind CSS v4 in a Vite project using @tailwindcss/vite.",
+    remoteUrl: "https://raw.githubusercontent.com/tailwindlabs/tailwindcss.com/master/src/docs/installation/framework-guides/vite.md",
+    bundledContent: `# Installing Tailwind CSS v4 with Vite
+
+Tailwind CSS v4 features a dedicated Vite plugin for fast build times and zero configuration overhead.
+
+## Step 1: Install Tailwind and Plugin
+\`\`\`bash
+npm install tailwindcss @tailwindcss/vite
+\`\`\`
+
+## Step 2: Configure Vite
+Add \`@tailwindcss/vite\` to your \`vite.config.ts\`:
+\`\`\`ts
+import { defineConfig } from "vite";
+import tailwindcss from "@tailwindcss/vite";
+
+export default defineConfig({
+  plugins: [tailwindcss()],
+});
+\`\`\`
+
+## Step 3: Import in CSS
+Replace any existing \`@tailwind\` lines with a single import in your main CSS file (e.g. \`src/index.css\`):
+\`\`\`css
+@import "tailwindcss";
+\`\`\`
+
+No \`tailwind.config.js\` or PostCSS config is needed.
+`,
+  },
+  {
+    path: "tailwind/theme-configuration",
+    framework: "tailwind",
+    title: "Tailwind CSS v4 @theme and Design Tokens",
+    category: "Configuration",
+    summary: "Configuring colors, fonts, spacing, and breakpoints directly in CSS using @theme.",
+    bundledContent: `# Tailwind CSS v4 Theme Configuration
+
+In Tailwind CSS v4, themes are configured directly in your CSS using \`@theme\` blocks instead of \`tailwind.config.js\`.
+
+## Defining Custom Tokens
+\`\`\`css
+@import "tailwindcss";
+
+@theme {
+  --color-primary-50: #eff6ff;
+  --color-primary-500: #3b82f6;
+  --color-primary-900: #1e3a8a;
+
+  --font-display: "Outfit", sans-serif;
+  --font-body: "Inter", sans-serif;
+
+  --breakpoint-3xl: 120rem;
+}
+\`\`\`
+
+## Overriding vs Extending
+- Inside \`@theme\`, defining variables adds or overrides default values.
+- To reset all theme defaults, use \`@theme default\` or define custom sets.
+
+## Using CSS Variables Directly
+Tailwind v4 exposes all theme variables in the generated CSS:
+\`\`\`tsx
+<div className="bg-primary-500 font-display">
+  Styled with theme tokens
+</div>
+\`\`\`
+`,
+  },
+  {
+    path: "tailwind/upgrade-guide-v4",
+    framework: "tailwind",
+    title: "Tailwind CSS v4 Upgrade Guide",
+    category: "Upgrades",
+    summary: "Upgrading from Tailwind CSS v3 to v4, automated migration CLI, and breaking changes.",
+    bundledContent: `# Upgrading to Tailwind CSS v4
+
+## Automated Upgrade Tool
+Run the official upgrade codemod to migrate your project automatically:
+\`\`\`bash
+npx @tailwindcss/upgrade
+\`\`\`
+
+## Key Breaking Changes
+1. **CSS Import Syntax**:
+   - Before: \`@tailwind base; @tailwind components; @tailwind utilities;\`
+   - After: \`@import "tailwindcss";\`
+2. **Configuration in CSS**:
+   - Design tokens migrate from \`tailwind.config.js\` to \`@theme { ... }\` in CSS.
+3. **Color Space**:
+   - Default palette colors are calibrated in the modern \`oklch()\` color space.
+4. **PostCSS Removal**:
+   - When using Vite, the \`@tailwindcss/vite\` plugin replaces PostCSS entirely.
+`,
+  },
+
+  // ─── Next.js ───────────────────────────────────────────────────────────────
+  {
+    path: "nextjs/app-router-overview",
+    framework: "nextjs",
+    title: "Next.js App Router Architecture",
+    category: "Architecture",
+    summary: "Guide to the App Router: layouts, pages, loading states, and error boundaries.",
+    bundledContent: `# Next.js App Router Architecture
+
+The App Router operates within the \`app/\` directory and leverages React Server Components.
+
+## Routing Hierarchy
+- \`layout.tsx\`: Shared UI across multiple routes. Preserves state and does not re-render on navigation.
+- \`page.tsx\`: Unique UI for a specific URL route.
+- \`loading.tsx\`: Instant fallback UI rendered with React Suspense while page content streams.
+- \`error.tsx\`: Client-side error boundary catching unexpected errors in child trees.
+- \`not-found.tsx\`: UI displayed when \`notFound()\` is called.
+
+## Server and Client Component Hierarchy
+Pages and layouts are Server Components by default. Include \`"use client"\` only when necessary for interactivity.
+`,
+  },
+  {
+    path: "nextjs/data-fetching",
+    framework: "nextjs",
+    title: "Next.js Data Fetching, Caching, and Server Actions",
+    category: "Data Fetching",
+    summary: "Server-side data fetching, request memoization, revalidation, and Next.js 15 async APIs.",
+    bundledContent: `# Next.js Data Fetching and Caching
+
+## Async Request APIs (Next.js 15+)
+Dynamic request APIs return Promises and must be awaited:
+\`\`\`tsx
+import { cookies, headers } from "next/headers";
+
+export default async function Page({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ [key: string]: string | undefined }>;
+}) {
+  const { id } = await params;
+  const cookieStore = await cookies();
+  const token = cookieStore.get("session")?.value;
+
+  const data = await fetch(\`https://api.example.com/items/\${id}\`, {
+    next: { tags: ["item"] },
+  });
+  const item = await data.json();
+
+  return <div>{item.title}</div>;
+}
+\`\`\`
+
+## Server Actions and Cache Revalidation
+\`\`\`tsx
+"use server";
+import { revalidateTag } from "next/cache";
+
+export async function updateItem(formData: FormData) {
+  const id = formData.get("id");
+  await db.update(id);
+  revalidateTag("item");
+}
+\`\`\`
+`,
+  },
+
+  // ─── Vite ──────────────────────────────────────────────────────────────────
+  {
+    path: "vite/configuration",
+    framework: "vite",
+    title: "Vite Configuration and Performance Tuning",
+    category: "Configuration",
+    summary: "Optimizing Vite configuration, plugin setup, aliases, and production builds.",
+    bundledContent: `# Vite Configuration Guide
+
+## Standard Configuration Pattern
+\`\`\`ts
+import { defineConfig } from "vite";
+import react from "@vitejs/plugin-react";
+import path from "node:path";
+
+export default defineConfig({
+  plugins: [react()],
+  resolve: {
+    alias: {
+      "@": path.resolve(__dirname, "./src"),
+    },
+  },
+  server: {
+    port: 3000,
+    open: true,
+  },
+  build: {
+    target: "esnext",
+    sourcemap: true,
+  },
+});
+\`\`\`
+
+## Environment Variables
+- Client-facing variables MUST start with \`VITE_\` (e.g. \`VITE_API_KEY\`).
+- Accessed in source code via \`import.meta.env.VITE_API_KEY\`.
+- Non-prefixed variables are strictly server-side and invisible to the client bundle.
+`,
+  },
+
+  // ─── TypeScript ────────────────────────────────────────────────────────────
+  {
+    path: "typescript/tsconfig-modern",
+    framework: "typescript",
+    title: "Modern tsconfig.json Setup for Frontend Bundlers",
+    category: "Configuration",
+    summary: "Best practices for configuring TypeScript with Vite, Next.js, and modern ESM.",
+    bundledContent: `# Modern TypeScript Configuration
+
+## Recommended tsconfig.json for Bundlers
+\`\`\`json
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "lib": ["DOM", "DOM.Iterable", "ESNext"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "jsx": "react-jsx",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "skipLibCheck": true,
+    "verbatimModuleSyntax": true
+  },
+  "include": ["src"]
+}
+\`\`\`
+
+## Key Modern Flags
+- \`"moduleResolution": "bundler"\`: Directs TypeScript to resolve exports packages like modern tools (Vite, Turbopack, Webpack).
+- \`"verbatimModuleSyntax": true\`: Enforces clear distinction between type imports (\`import type { ... }\`) and value imports.
+- \`"noUncheckedIndexedAccess": true\`: Treats array index access (\`arr[i]\`) as \`T | undefined\` preventing runtime index errors.
+`,
+  },
+];
+
+/**
+ * Searches the documentation catalogue.
+ */
+export function searchFrontendDocs(query, { framework, limit = 5 } = {}) {
+  const fwFilter = framework && framework !== "all" ? String(framework).toLowerCase().trim() : null;
+
+  const candidateEntries = fwFilter
+    ? DOCS_ENTRIES.filter((e) => e.framework === fwFilter)
+    : DOCS_ENTRIES;
+
+  const results = searchEntries(candidateEntries, query, { limit });
+  return results;
+}
+
+/**
+ * Resolves a doc entry by path or fuzzy slug.
+ */
+export function resolveDocEntry(requestedPath) {
+  const clean = String(requestedPath || "")
+    .trim()
+    .replace(/^\/+/, "")
+    .replace(/\.md$/, "");
+
+  const exact = DOCS_ENTRIES.find((e) => e.path === clean);
+  if (exact) return exact;
+
+  return DOCS_ENTRIES.find((e) => e.path.endsWith(`/${clean}`) || e.path.includes(clean)) || null;
+}
+
+/**
+ * Reads doc content, optionally fetching upstream or falling back to bundled content.
+ */
+export async function readDocContent(entry, { section, outline, http } = {}) {
+  let content = entry.bundledContent;
+
+  // If http client is provided and entry has remoteUrl, try remote with fallback to bundled
+  if (http && entry.remoteUrl) {
+    try {
+      const fetched = await http.fetchText(entry.remoteUrl, { ttl: 3 * 60 * 60 * 1000 });
+      if (fetched && fetched.trim().length > 100) {
+        content = fetched;
+      }
+    } catch {
+      // Fallback to bundled content
+    }
+  }
+
+  if (outline) {
+    return {
+      title: entry.title,
+      path: entry.path,
+      output: `# Outline — ${entry.title} (${entry.path})\n\n${renderOutline(content)}`,
+    };
+  }
+
+  if (section) {
+    const extracted = extractSection(content, section);
+    if (extracted) {
+      return {
+        title: entry.title,
+        path: entry.path,
+        output: `# ${entry.title} > Section: ${section}\n\n${extracted}`,
+      };
+    }
+
+    return {
+      title: entry.title,
+      path: entry.path,
+      output:
+        `Section "${section}" was not found on ${entry.path}. Available headings:\n\n` +
+        `${renderOutline(content)}\n\n` +
+        `Re-read with one of these, or omit "section" for the full page.`,
+    };
+  }
+
+  return {
+    title: entry.title,
+    path: entry.path,
+    output: content,
+  };
+}

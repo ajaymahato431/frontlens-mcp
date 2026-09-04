@@ -1,0 +1,62 @@
+{
+  "name": "frontlens-mcp",
+  "version": "1.0.0",
+  "description": "Model Context Protocol server providing version-aware frontend engineering intelligence (React, Next.js, Vite, Tailwind CSS, TypeScript) to AI coding agents",
+  "type": "module",
+  "main": "index.js",
+  "bin": {
+    "frontlens-mcp": "index.js"
+  },
+  "files": [
+    "index.js",
+    "src/",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md",
+    ".env.example"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node index.js",
+    "test": "node --test test/core.test.mjs test/env-example.test.mjs test/frontlens.test.mjs",
+    "prepublishOnly": "npm test",
+    "test:integration": "node --test --test-timeout=90000 test/integration.test.mjs",
+    "test:all": "npm test && npm run test:integration"
+  },
+  "keywords": [
+    "mcp",
+    "mcp-server",
+    "modelcontextprotocol",
+    "model-context-protocol",
+    "react",
+    "nextjs",
+    "vite",
+    "tailwindcss",
+    "typescript",
+    "frontend",
+    "documentation",
+    "ai",
+    "llm",
+    "claude",
+    "cursor"
+  ],
+  "author": "Ajay Mahato (https://github.com/ajaymahato431)",
+  "license": "MIT",
+  "homepage": "https://github.com/ajaymahato431/frontlens-mcp#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ajaymahato431/frontlens-mcp.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ajaymahato431/frontlens-mcp/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "zod": "^4.4.3"
+  }
+}
